@@ -30,7 +30,7 @@ class CocoTrainDataset(Dataset):
         self._paf_thickness = paf_thickness
         self._transform = transform
         with open(labels, 'rb') as f:
-            self._labels = json.load(f)
+            self._labels = pickle.load(f)
 
     def __getitem__(self, idx):
         label = copy.deepcopy(self._labels[idx])  # label modified in transform

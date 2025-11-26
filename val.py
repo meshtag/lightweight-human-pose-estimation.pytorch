@@ -78,7 +78,8 @@ def convert_to_coco_format(pose_entries, all_keypoints):
     return coco_keypoints, scores
 
 
-def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(128, 128, 128), img_scale=1/256):
+def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(128, 128, 128),
+         img_scale=1/256, device=torch.device('cuda')):
     normed_img = normalize(img, img_mean, img_scale)
     height, width, _ = normed_img.shape
     scales_ratios = [scale * base_height / float(height) for scale in scales]
@@ -90,7 +91,7 @@ def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(
         min_dims = [base_height, max(scaled_img.shape[1], base_height)]
         padded_img, pad = pad_width(scaled_img, stride, pad_value, min_dims)
 
-        tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float().cuda()
+        tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float().to(device)
         stages_output = net(tensor_img)
 
         stage2_heatmaps = stages_output[-2]
@@ -110,8 +111,9 @@ def infer(net, img, scales, base_height, stride, pad_value=(0, 0, 0), img_mean=(
     return avg_heatmaps, avg_pafs
 
 
-def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False):
-    net = net.cuda().eval()
+def evaluate(labels, output_name, images_folder, net, multiscale=False, visualize=False,
+             device=torch.device('cuda')):
+    net = net.to(device).eval()
     base_height = 368
     scales = [1]
     if multiscale:
@@ -124,7 +126,7 @@ def evaluate(labels, output_name, images_folder, net, multiscale=False, visualiz
         file_name = sample['file_name']
         img = sample['img']
 
-        avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, stride)
+        avg_heatmaps, avg_pafs = infer(net, img, scales, base_height, stride, device=device)
 
         total_keypoints_num = 0
         all_keypoints_by_type = []
@@ -169,10 +171,12 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint-path', type=str, required=True, help='path to the checkpoint')
     parser.add_argument('--multiscale', action='store_true', help='average inference results over multiple scales')
     parser.add_argument('--visualize', action='store_true', help='show keypoints')
+    parser.add_argument('--cpu', action='store_true', help='force CPU inference (slower)')
     args = parser.parse_args()
 
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
     net = PoseEstimationWithMobileNet()
-    checkpoint = torch.load(args.checkpoint_path)
+    checkpoint = torch.load(args.checkpoint_path, map_location=device)
     load_state(net, checkpoint)
 
-    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize)
+    evaluate(args.labels, args.output_name, args.images_folder, net, args.multiscale, args.visualize, device)

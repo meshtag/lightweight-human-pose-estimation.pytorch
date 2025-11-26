@@ -12,7 +12,7 @@ def convert_to_onnx(net, output_name):
     output_names = ['stage_0_output_1_heatmaps', 'stage_0_output_0_pafs',
                     'stage_1_output_1_heatmaps', 'stage_1_output_0_pafs']
 
-    torch.onnx.export(net, input, output_name, verbose=True, input_names=input_names, output_names=output_names)
+    torch.onnx.export(net, input, output_name, verbose=True, input_names=input_names, output_names=output_names, opset_version=18, do_constant_folding=True)
 
 
 if __name__ == '__main__':
@@ -23,7 +23,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     net = PoseEstimationWithMobileNet()
-    checkpoint = torch.load(args.checkpoint_path)
+    checkpoint = torch.load(args.checkpoint_path, map_location=torch.device('cpu'))
     load_state(net, checkpoint)
+    net = net.cpu()
 
     convert_to_onnx(net, args.output_name)

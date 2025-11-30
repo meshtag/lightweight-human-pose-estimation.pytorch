@@ -22,7 +22,7 @@ cv2.ocl.setUseOpenCL(False)  # To prevent freeze of DataLoader
 
 def train(prepared_train_labels, train_images_folder, num_refinement_stages, base_lr, batch_size, batches_per_iter,
           num_workers, checkpoint_path, weights_only, from_mobilenet, checkpoints_folder, log_after,
-          val_labels, val_images_folder, val_output_name, checkpoint_after, val_after):
+          val_labels, val_images_folder, val_output_name, checkpoint_after, val_after, device, num_epochs):
     net = PoseEstimationWithMobileNet(num_refinement_stages)
 
     stride = 8
@@ -59,7 +59,7 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
     drop_after_epoch = [100, 200, 260]
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=drop_after_epoch, gamma=0.333)
     if checkpoint_path:
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
 
         if from_mobilenet:
             load_from_mobilenet(net, checkpoint)
@@ -71,9 +71,13 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
                 num_iter = checkpoint['iter']
                 current_epoch = checkpoint['current_epoch']
 
-    net = DataParallel(net).cuda()
+    use_cuda = torch.cuda.is_available() and device.type == 'cuda'
+    if use_cuda:
+        net = DataParallel(net).to(device)
+    else:
+        net = net.to(device)
     net.train()
-    for epochId in range(current_epoch, 280):
+    for epochId in range(current_epoch, num_epochs):
         scheduler.step()
         total_losses = [0, 0] * (num_refinement_stages + 1)  # heatmaps loss, paf loss per stage
         batch_per_iter_idx = 0
@@ -81,11 +85,11 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
             if batch_per_iter_idx == 0:
                 optimizer.zero_grad()
 
-            images = batch_data['image'].cuda()
-            keypoint_masks = batch_data['keypoint_mask'].cuda()
-            paf_masks = batch_data['paf_mask'].cuda()
-            keypoint_maps = batch_data['keypoint_maps'].cuda()
-            paf_maps = batch_data['paf_maps'].cuda()
+            images = batch_data['image'].to(device)
+            keypoint_masks = batch_data['keypoint_mask'].to(device)
+            paf_masks = batch_data['paf_mask'].to(device)
+            keypoint_maps = batch_data['keypoint_maps'].to(device)
+            paf_maps = batch_data['paf_maps'].to(device)
 
             stages_output = net(images)
 
@@ -119,7 +123,8 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
                     total_losses[loss_idx] = 0
             if num_iter % checkpoint_after == 0:
                 snapshot_name = '{}/checkpoint_iter_{}.pth'.format(checkpoints_folder, num_iter)
-                torch.save({'state_dict': net.module.state_dict(),
+                state_dict = net.module.state_dict() if hasattr(net, 'module') else net.state_dict()
+                torch.save({'state_dict': state_dict,
                             'optimizer': optimizer.state_dict(),
                             'scheduler': scheduler.state_dict(),
                             'iter': num_iter,
@@ -127,7 +132,7 @@ def train(prepared_train_labels, train_images_folder, num_refinement_stages, bas
                            snapshot_name)
             if num_iter % val_after == 0:
                 print('Validation...')
-                evaluate(val_labels, val_output_name, val_images_folder, net)
+                evaluate(val_labels, val_output_name, val_images_folder, net, device=device)
                 net.train()
 
 
@@ -158,8 +163,11 @@ if __name__ == '__main__':
                         help='number of iterations to save checkpoint')
     parser.add_argument('--val-after', type=int, default=5000,
                         help='number of iterations to run validation')
+    parser.add_argument('--cpu', action='store_true', help='force CPU training/inference (slower)')
+    parser.add_argument('--epochs', type=int, default=280, help='total number of epochs to run')
     args = parser.parse_args()
 
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
     checkpoints_folder = '{}_checkpoints'.format(args.experiment_name)
     if not os.path.exists(checkpoints_folder):
         os.makedirs(checkpoints_folder)
@@ -167,4 +175,4 @@ if __name__ == '__main__':
     train(args.prepared_train_labels, args.train_images_folder, args.num_refinement_stages, args.base_lr, args.batch_size,
           args.batches_per_iter, args.num_workers, args.checkpoint_path, args.weights_only, args.from_mobilenet,
           checkpoints_folder, args.log_after, args.val_labels, args.val_images_folder, args.val_output_name,
-          args.checkpoint_after, args.val_after)
+          args.checkpoint_after, args.val_after, device, args.epochs)

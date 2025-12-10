@@ -25,8 +25,8 @@ def conv_dw(in_channels, out_channels, kernel_size=3, padding=1, stride=1, dilat
 def conv_dw_no_bn(in_channels, out_channels, kernel_size=3, padding=1, stride=1, dilation=1):
     return nn.Sequential(
         nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding, dilation=dilation, groups=in_channels, bias=False),
-        nn.ELU(inplace=True),
+        nn.ReLU(inplace=True),
 
         nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False),
-        nn.ELU(inplace=True),
+        nn.ReLU(inplace=True),
     )

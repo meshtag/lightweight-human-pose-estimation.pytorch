@@ -18,7 +18,7 @@ def load(path):
     return i, i.get_input_details()[0], i.get_output_details()
 
 int8, i8_in, outs8   = load(MODEL_DIR / "pose_int8.tflite")
-fp16, f16_in, outs16 = load(MODEL_DIR / "human-pose-estimation_float16.tflite")
+fp16, f16_in, outs16 = load(MODEL_DIR / "human-pose-estimation-new-single_float16.tflite")
 
 # Match outputs by channel count
 match = lambda c: next(o for o in outs16 if o["shape"][-1] == c)
